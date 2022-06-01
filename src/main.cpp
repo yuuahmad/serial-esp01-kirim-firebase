@@ -1,43 +1,65 @@
 #include <Arduino.h>
-#define BLYNK_TEMPLATE_ID "TMPLyN53ar8H"
-#define BLYNK_DEVICE_NAME "Quickstart Device"
-#define BLYNK_AUTH_TOKEN "NU0sKMDkAA1tNbem3OgpKagj4Ga4dd4-"
-#define BLYNK_PRINT Serial
+// include board
+#if defined(ESP32)
+#include <WiFi.h>
+#elif defined(ESP8266)
 #include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
-char auth[] = BLYNK_AUTH_TOKEN;
-char ssid[] = "KONTRAKAN UYE";
-char pass[] = "KUSANG123";
-BlynkTimer timer;
+#endif
+
+// include firebase dan wifi
+#include <Firebase_ESP_Client.h>
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+#define WIFI_SSID "YUUAHMAD laptop" // ini adalah nama wifi
+#define WIFI_PASSWORD "yusuf1112"   // dan ini adalah passwordnya. kosongkan bagian ini kalau tidak pakai password
+#define API_KEY "AIzaSyDxdifqzfU7VL7HvOqn1bz8GsesRy6xvhc"
+#define DATABASE_URL "solar-tracker-database-default-rtdb.asia-southeast1.firebasedatabase.app" //<databaseName>.firebaseio.com or <databaseName>.<region>.firebasedatabase.app
+#define USER_EMAIL "ahmad.yusuf11@gmail.com"
+#define USER_PASSWORD "yusuf1112"
+
+// Define Firebase Data object
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+unsigned long sendDataPrevMillis = 0;
+int nilaitambah = 0;
 
 // buat variabel bool untuk parsing data.
 bool parsing = false;
 String sData, data[10];
-int nilaiPertama, nilaiKedua, nilaiKetiga, nilaiKeempat;
-BLYNK_WRITE(V0)
-{
-  int value = param.asInt();
-  Blynk.virtualWrite(V1, value);
-}
-
-void myTimerEvent()
-{
-  Blynk.virtualWrite(V2, millis() / 1000);
-  Blynk.virtualWrite(V3, nilaiPertama);
-  Blynk.virtualWrite(V4, nilaiKedua);
-}
+int temperatur, bat_volt, solar_volt, arus;
 
 void setup()
 {
+  // mulai komunikasi serial
   Serial.begin(9600);
-  Blynk.begin(auth, ssid, pass);
-  timer.setInterval(1000L, myTimerEvent);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(3000);
+  }
+  Serial.println();
+  Serial.print("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  delay(1000);
+
+  Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
+  config.api_key = API_KEY;
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  config.database_url = DATABASE_URL;
+  config.token_status_callback = tokenStatusCallback; // see addons/TokenHelper.h
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  Firebase.setDoubleDigits(5);
 }
 
 void loop()
 {
-  Blynk.run();
-  timer.run();
+  // kode untuk mendapatkan nilai dari arduino mega
   while (Serial.available())
   {
     // buat variabel nilaiinput, dan masukkan nilai serial.readString kesana
@@ -61,10 +83,21 @@ void loop()
           data[q] += sData[i];
       }
       // setelah semua data didapatkan, kita akan print datanya ke serial satu persatu
-      nilaiPertama = data[1].toInt();
-      nilaiKedua = data[2].toInt();
+      temperatur = data[1].toInt();
+      bat_volt = data[2].toInt();
+      solar_volt = data[3].toInt();
+      arus = data[4].toInt();
       parsing = false;
       sData = "";
     }
+  }
+  // ini kode untuk upload kode ke firebase
+  if (Firebase.ready() && (millis() - sendDataPrevMillis > 4000 || sendDataPrevMillis == 0))
+  {
+    sendDataPrevMillis = millis();
+    Firebase.RTDB.setFloat(&fbdo, "/temperatur", temperatur);
+    Firebase.RTDB.setFloat(&fbdo, "/soltra1/teganganbaterai", bat_volt);
+    Firebase.RTDB.setFloat(&fbdo, "/solar_volt", solar_volt);
+    Firebase.RTDB.setFloat(&fbdo, "/arus", arus);
   }
 }
